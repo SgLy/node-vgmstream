@@ -1,0 +1,17 @@
+{
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceRoot}/build",
+    "--all-scopes-completion",
+    "--background-index",
+    "--background-index-priority=normal",
+    "--clang-tidy",
+    "--completion-style=detailed",
+    "--function-arg-placeholders",
+    "--header-insertion=iwyu",
+    "--header-insertion-decorators",
+    "-j",
+    "4",
+    "--malloc-trim",
+    "--pch-storage=memory",
+  ]
+}

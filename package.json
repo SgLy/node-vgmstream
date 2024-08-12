@@ -1,0 +1,16 @@
+{
+  "name": "node-vgmstream",
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "install": "cmake-js compile",
+    "test": "node main.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bindings": "~1.2.1"
+  }
+}
