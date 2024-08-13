@@ -6,7 +6,7 @@ project (node-vgmstream)
 
 include_directories(${CMAKE_JS_INC})
 
-file(GLOB SOURCE_FILES "lib.cpp")
+file(GLOB SOURCE_FILES "src/lib.cpp")
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 
