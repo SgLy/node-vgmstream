@@ -11,6 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "bindings": "~1.2.1"
+    "bindings": "~1.2.1",
+    "node-addon-api": "^8.1.0"
   }
 }

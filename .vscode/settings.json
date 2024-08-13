@@ -13,5 +13,9 @@
     "4",
     "--malloc-trim",
     "--pch-storage=memory",
-  ]
+  ],
+  "[cpp]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  }
 }

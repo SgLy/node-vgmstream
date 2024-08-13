@@ -11,12 +11,21 @@ importers:
       bindings:
         specifier: ~1.2.1
         version: 1.2.1
+      node-addon-api:
+        specifier: ^8.1.0
+        version: 8.1.0
 
 packages:
 
   bindings@1.2.1:
     resolution: {integrity: sha512-u4cBQNepWxYA55FunZSM7wMi55yQaN0otnhhilNoWHq0MfOfJeQx0v0mRRpolGOExPjZcl6FtB0BB8Xkb88F0g==}
 
+  node-addon-api@8.1.0:
+    resolution: {integrity: sha512-yBY+qqWSv3dWKGODD6OGE6GnTX7Q2r+4+DfpqxHSHh8x0B4EKP9+wVGLS6U/AM1vxSNNmUEuIV5EGhYwPpfOwQ==}
+    engines: {node: ^18 || ^20 || >= 21}
+
 snapshots:
 
   bindings@1.2.1: {}
+
+  node-addon-api@8.1.0: {}

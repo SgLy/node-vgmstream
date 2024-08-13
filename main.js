@@ -1,3 +1,3 @@
-var addon = require('bindings')('node-vgmstream');
+const vgmstream = require('bindings')('node-vgmstream');
 
-console.log(addon.hello()); // 'world'
+console.log(vgmstream.version());
