@@ -17,5 +17,8 @@
   "[cpp]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
-  }
+  },
+  "cmake.configureOnEdit": false,
+  "cmake.configureOnOpen": false,
+  "cmake.automaticReconfigure": false,
 }

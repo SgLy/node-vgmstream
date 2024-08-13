@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.9)
 cmake_policy(SET CMP0042 NEW)
 set (CMAKE_CXX_STANDARD 17)
 
+set (CMAKE_EXPORT_COMPILE_COMMANDS true)
+set (CMAKE_COLOR_DIAGNOSTICS true)
+
 project (node-vgmstream)
 
 include_directories(${CMAKE_JS_INC})
@@ -22,7 +25,7 @@ add_dependencies(${PROJECT_NAME} vgmstream_version)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
-target_link_libraries(${PROJECT_NAME} libvgmstream)
+target_link_libraries(${PROJECT_NAME} libvgmstream_shared)
 
 # Include Node-API wrappers
 execute_process(COMMAND node -p "require('node-addon-api').include"

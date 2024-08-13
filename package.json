@@ -3,8 +3,8 @@
   "version": "0.0.1",
   "main": "index.js",
   "scripts": {
-    "install": "cmake-js compile",
-    "test": "node main.js"
+    "install": "cmake-js compile --generator=Ninja --prefer-clang --out build",
+    "configure:debug": "cmake-js configure --generator=Ninja --prefer-clang --out build --debug"
   },
   "keywords": [],
   "author": "",
