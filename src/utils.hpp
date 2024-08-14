@@ -14,6 +14,35 @@ extern "C" {
 #include "../vgmstream/src/streamfile.h"
 }
 
+class Helper {
+public:
+  Napi::Env env;
+  explicit Helper(const Napi::Env &env) : env(env) {}
+
+  auto throws(const char *error_message) const {
+    Napi::Error::New(this->env, error_message).ThrowAsJavaScriptException();
+    return this->env.Undefined();
+  }
+
+  [[nodiscard]] auto
+  object(const std::function<void(Napi::Object &)> &initializer) const {
+    auto obj = Napi::Object::New(this->env);
+    initializer(obj);
+    return obj;
+  }
+
+  template <typename T>
+  [[nodiscard]] auto
+  array(const size_t length,
+        const std::function<T(const size_t index)> &item_generator) const {
+    auto arr = Napi::Array::New(this->env, length);
+    for (size_t i = 0; i < length; ++i) {
+      arr[i] = item_generator(i);
+    }
+    return arr;
+  }
+};
+
 class NodeBufferStreamFile {
 public:
   explicit NodeBufferStreamFile(const Napi::Buffer<uint8_t> &buffer)
@@ -87,4 +116,4 @@ auto StreamFileFromBuffer(const Napi::CallbackInfo &info,
   return buffer_stream_file;
 }
 
-#endif  // SRC_UTILS_HPP_
+#endif // SRC_UTILS_HPP_
