@@ -1,3 +1,14 @@
 ---
-Checks:          'clang-diagnostic-*,clang-analyzer-*,bugprone-*,modernize-*,performance-*,readability-*,llvm-include-order'
-FormatStyle:     Google
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  llvm-include-order
+CheckOptions:
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: \$
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: \$

@@ -1,10 +1,12 @@
 {
   "name": "node-vgmstream",
   "version": "0.0.1",
-  "main": "index.js",
+  "types": "lib.d.ts",
+  "main": "lib.js",
   "scripts": {
     "install": "cmake-js compile --generator=Ninja --prefer-clang --out build",
-    "configure:debug": "cmake-js configure --generator=Ninja --prefer-clang --out build --debug"
+    "configure:debug": "cmake-js configure --generator=Ninja --prefer-clang --out build --debug",
+    "test": "node test.js"
   },
   "keywords": [],
   "author": "",
