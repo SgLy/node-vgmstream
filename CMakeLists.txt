@@ -11,9 +11,11 @@ include_directories(${CMAKE_JS_INC})
 
 file(GLOB SOURCE_FILES "src/lib.cpp")
 
-add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
+file(GLOB VGMSTREAM_UTILS "vgmstream/cli/vgmstream_cli_utils.c" "vgmstream/cli/wav_utils.c")
 
-include_directories("${CMAKE_SOURCE_DIR}/vgmstream")
+add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC} ${VGMSTREAM_UTILS})
+
+include_directories(${CMAKE_SOURCE_DIR})
 add_subdirectory("${CMAKE_SOURCE_DIR}/vgmstream")
 
 add_custom_target(

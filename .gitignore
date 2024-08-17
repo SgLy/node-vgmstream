@@ -1,5 +1,6 @@
 ### Project specific part
-test.bank
+*.bank
+*.wav
 build
 
 ### CPP part

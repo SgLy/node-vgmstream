@@ -8,6 +8,14 @@
       "program": "node",
       "args": ["test.js"],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug (cli)",
+      "program": "build/vgmstream/cli/vgmstream-cli",
+      "args": ["-S", "1", "test.bank"],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

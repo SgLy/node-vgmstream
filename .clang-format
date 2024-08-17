@@ -1,4 +1,22 @@
+# yaml-language-server: $schema=https://json.schemastore.org/clang-format.json
 ---
-Language:        Cpp
-BasedOnStyle:  Google
-ColumnLimit:     120
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 120
+AlignAfterOpenBracket: BlockIndent
+AlignArrayOfStructures: None
+AlignConsecutiveAssignments: None
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveMacros: None
+AlignConsecutiveShortCaseStatements:
+  Enabled: false
+AlignEscapedNewlines: DontAlign
+AlignOperands: AlignAfterOperator
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: true
+BinPackParameters: true
+BreakAfterAttributes: Always
+BreakBeforeTernaryOperators: true
+Cpp11BracedListStyle: true
