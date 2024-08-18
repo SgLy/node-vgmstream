@@ -2,7 +2,6 @@
 #define SRC_UTILS_HPP_
 
 #include <napi.h>
-#include <stdint.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -19,6 +18,13 @@ extern "C" {
 #include "vgmstream/src/streamfile.h"
 #include "vgmstream/src/vgmstream.h"
 }
+
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#define SWAP_REQUIRED true
+#include <utility>
+#else
+#define SWAP_REQUIRED false
+#endif
 
 using NapiBuffer = Napi::Buffer<uint8_t>;
 
@@ -99,10 +105,10 @@ class ExtendableBuffer {
   auto move_to_node_buffer(const Napi::Env &env) {
     if (!initialized) {
       auto *empty_buf = new uint8_t[1];
-      return Napi::Buffer<uint8_t>::New(env, empty_buf, 0, [](auto _env, auto buf) { delete[] buf; });
+      return Napi::Buffer<uint8_t>::New(env, empty_buf, 0, [](auto env, auto buf) { delete[] buf; });
     }
     initialized = false;
-    auto buf = Napi::Buffer<uint8_t>::New(env, ptr, current, [](auto _env, auto buf) { delete[] buf; });
+    auto buf = Napi::Buffer<uint8_t>::New(env, ptr, current, [](auto env, auto buf) { delete[] buf; });
     return buf;
   }
 
@@ -115,7 +121,7 @@ class ExtendableBuffer {
 
   template <typename T>
   void swap(const size_t count) {
-#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#if SWAP_REQUIRED
     auto multiplier = unsigned_multiplier<T>();
     if (multiplier == 1) {
       return;
@@ -131,7 +137,7 @@ class ExtendableBuffer {
         std::swap(*i, *(i + 7));
         std::swap(*(i + 1), *(i + 6));
         std::swap(*(i + 2), *(i + 5));
-        std::swap(*(i + 3), *(i + 4));
+        std::swap(*(i + 3), *(i + 4));  // NOLINT build/include_what_you_use
       }
     }
 // NOLINTEND readability-magic-numbers
@@ -241,7 +247,7 @@ auto new_inner_streamfile(const int stream_index) -> STREAMFILE {
   };
 }
 
-auto vgmstreamFromBuffer(const NapiBuffer &buffer, const int stream_index = 1) {
+auto vgmstream_from_buffer(const NapiBuffer &buffer, const int stream_index = 1) {
   auto *buffer_stream_file = new NodeBufferStreamFile(buffer, stream_index);
   auto *vgmstream = init_vgmstream_from_STREAMFILE(reinterpret_cast<STREAMFILE *>(buffer_stream_file));
   return std::shared_ptr<VGMSTREAM>(vgmstream, [=](auto ptr) {

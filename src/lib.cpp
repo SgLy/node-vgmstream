@@ -30,7 +30,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     buffer_ref = Napi::Reference<NapiBuffer>::New(arg0.As<NapiBuffer>(), 1);
   }
 
-  static auto GetVersion(const Napi::CallbackInfo &info) -> Napi::Value {
+  static auto get_version(const Napi::CallbackInfo &info) -> Napi::Value {
     auto $ = Helper(info.Env());
 
     return $.object([&](auto version) {
@@ -50,14 +50,14 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     });
   }
 
-  auto GetSubSongCount(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto vgmstream = vgmstreamFromBuffer(this->buffer_ref.Value());
+  auto get_sub_song_count(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
 
     return $.number(vgmstream->num_streams);
   }
 
-  auto GetMetaImpl(int stream_index) {
-    auto vgmstream = vgmstreamFromBuffer(this->buffer_ref.Value(), stream_index);
+  auto get_meta_impl(int stream_index) {
+    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value(), stream_index);
 
     vgmstream_info bank_info;
     describe_vgmstream_info(vgmstream.get(), &bank_info);
@@ -115,28 +115,28 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     });
   }
 
-  auto GetAllMeta(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto vgmstream = vgmstreamFromBuffer(this->buffer_ref.Value());
+  auto get_all_meta(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
 
     auto meta_arr = $.array<Napi::Object>(vgmstream->num_streams, [&](const size_t index) {
       // NOLINTNEXTLINE bugprone-narrowing-conversions
-      return GetMetaImpl(index + 1);
+      return get_meta_impl(index + 1);
     });
 
     return meta_arr;
   }
 
-  auto GetMeta(const Napi::CallbackInfo &info) -> Napi::Value {
+  auto get_meta(const Napi::CallbackInfo &info) -> Napi::Value {
     auto arg0 = info[0];
     if (!arg0.IsNumber()) {
       return $.throws("arg[0] in getMeta is not a number");
     }
     auto index = arg0.As<Napi::Number>().Int32Value();
 
-    return GetMetaImpl(index).As<Napi::Value>();
+    return get_meta_impl(index).As<Napi::Value>();
   }
 
-  auto Wave(const Napi::CallbackInfo &info) -> Napi::Value {
+  auto wave(const Napi::CallbackInfo &info) -> Napi::Value {
     auto arg0 = info[0];
     if (!arg0.IsNumber()) {
       return $.throws("arg[0] in getMeta is not a number");
@@ -155,7 +155,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     const int lwav_loop_end = 0;
     // end of fake configs
 
-    auto vgmstream_ptr = vgmstreamFromBuffer(this->buffer_ref.Value(), stream_index);
+    auto vgmstream_ptr = vgmstream_from_buffer(this->buffer_ref.Value(), stream_index);
     auto *vgmstream = vgmstream_ptr.get();
 
     auto channels = vgmstream->channels;
@@ -225,22 +225,22 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     return buf.move_to_node_buffer($.env);
   }
 
-  static auto Init(Napi::Env env, Napi::Object exports) {
-    auto vgmstreamClass = DefineClass(
+  static auto init(Napi::Env env, Napi::Object exports) {
+    auto vgmstream_class = DefineClass(
         env, "VGMStream",
-        {InstanceMethod<&VGMStream::GetSubSongCount>("getSubSongCount"),
-         InstanceMethod<&VGMStream::GetAllMeta>("getAllMeta"), InstanceMethod<&VGMStream::GetMeta>("getMeta"),
-         InstanceMethod<&VGMStream::GetAllMeta>("getAllMeta"), InstanceMethod<&VGMStream::Wave>("wave"),
-         StaticAccessor<&VGMStream::GetVersion>("version")}
+        {InstanceMethod<&VGMStream::get_sub_song_count>("getSubSongCount"),
+         InstanceMethod<&VGMStream::get_all_meta>("getAllMeta"), InstanceMethod<&VGMStream::get_meta>("getMeta"),
+         InstanceMethod<&VGMStream::get_all_meta>("getAllMeta"), InstanceMethod<&VGMStream::wave>("wave"),
+         StaticAccessor<&VGMStream::get_version>("version")}
     );
     auto *constructor = new Napi::FunctionReference();
-    *constructor = Napi::Persistent(vgmstreamClass);
-    exports["VGMStream"] = vgmstreamClass;
+    *constructor = Napi::Persistent(vgmstream_class);
+    exports["VGMStream"] = vgmstream_class;
   }
 };
 
 static auto Init(Napi::Env env, Napi::Object exports) -> Napi::Object {
-  VGMStream::Init(env, exports);
+  VGMStream::init(env, exports);
   return exports;
 }
 
