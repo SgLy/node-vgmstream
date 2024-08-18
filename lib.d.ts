@@ -12,7 +12,8 @@ declare module 'node-vgmstream' {
     constructor(buffer: Buffer);
 
     get subSongCount(): number;
-    selectSubSong(): VGMStreamSubSong;
+    /** 1-based */
+    selectSubSong(index: number): VGMStreamSubSong;
   }
   interface VGMStreamSubSongInfo {
     version: string;
