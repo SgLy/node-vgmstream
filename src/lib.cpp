@@ -5,63 +5,37 @@
 #include <memory>
 
 #include "./utils.hpp"
-#include "vgmstream/src/streamtypes.h"
 
 extern "C" {
 #include "vgmstream/cli/wav_utils.h"
 #include "vgmstream/src/base/plugins.h"
+#include "vgmstream/src/streamtypes.h"
 #include "vgmstream/src/vgmstream.h"
 #include "vgmstream/version.h"
 }
 
-class VGMStream : public Napi::ObjectWrap<VGMStream> {
+class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
  private:
   const Napi::CallbackInfo *info = nullptr;
   Helper $;
 
+  int stream_index;
   Napi::Reference<NapiBuffer> buffer_ref;
+  std::shared_ptr<VGMSTREAM> vgmstream_ptr;
+  vgmstream_info bank_info;
 
  public:
-  explicit VGMStream(const Napi::CallbackInfo &info) : Napi::ObjectWrap<VGMStream>(info), info(&info), $(info.Env()) {
-    auto arg0 = info[0];
-    if (!arg0.IsBuffer()) {
-      $.throws("arg[0] in VGMStream constructor should be a buffer");
-    }
-    buffer_ref = Napi::Reference<NapiBuffer>::New(arg0.As<NapiBuffer>(), 1);
+  explicit VGMStreamSubSong(const Napi::CallbackInfo &info)
+      : Napi::ObjectWrap<VGMStreamSubSong>(info), info(&info), $(info.Env()) {
+    auto buffer = obtain_arg<NapiBuffer>(info, 0);
+    auto stream_index = obtain_arg<Napi::Number>(info, 1).Int32Value();
+
+    this->buffer_ref = Napi::Reference<NapiBuffer>::New(buffer, 1);
+    this->vgmstream_ptr = vgmstream_from_buffer(buffer, stream_index);
+    describe_vgmstream_info(vgmstream_ptr.get(), &bank_info);
   }
 
-  static auto get_version(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto $ = Helper(info.Env());
-
-    return $.object([&](auto version) {
-      version["version"] = VGMSTREAM_VERSION;
-      version["extension"] = $.object([&](auto extension) {
-        size_t extension_list_len = 0;
-        const char **extension_list = nullptr;
-
-        extension_list = vgmstream_get_formats(&extension_list_len);
-        extension["vgm"] =
-            $.array<const char *>(extension_list_len, [&](const size_t index) { return extension_list[index]; });
-
-        extension_list = vgmstream_get_common_formats(&extension_list_len);
-        extension["common"] =
-            $.array<const char *>(extension_list_len, [&](const size_t index) { return extension_list[index]; });
-      });
-    });
-  }
-
-  auto get_sub_song_count(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
-
-    return $.number(vgmstream->num_streams);
-  }
-
-  auto get_meta_impl(int stream_index) {
-    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value(), stream_index);
-
-    vgmstream_info bank_info;
-    describe_vgmstream_info(vgmstream.get(), &bank_info);
-
+  auto get_info(const Napi::CallbackInfo &info) -> Napi::Value {
     return $.object([&](auto meta) {
       meta["version"] = VGMSTREAM_VERSION;
       meta["sampleRate"] = bank_info.sample_rate;
@@ -72,13 +46,9 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
           mixing_info["inputChannels"] = bank_info.mixing_info.input_channels;
           mixing_info["outputChannels"] = bank_info.mixing_info.output_channels;
         });
-      } else {
-        meta["mixingInfo"] = $.null();
       }
 
-      if (bank_info.channel_layout == 0) {
-        meta["channelLayout"] = $.null();
-      } else {
+      if (bank_info.channel_layout != 0) {
         meta["channelLayout"] = bank_info.channel_layout;
       }
 
@@ -87,8 +57,6 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
           looping_info["start"] = bank_info.loop_info.start;
           looping_info["end"] = bank_info.loop_info.end;
         });
-      } else {
-        meta["loopingInfo"] = $.null();
       }
 
       if (bank_info.interleave_info.last_block > bank_info.interleave_info.first_block) {
@@ -96,8 +64,6 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
           interleave_info["firstBlock"] = bank_info.interleave_info.first_block;
           interleave_info["lastBlock"] = bank_info.interleave_info.last_block;
         });
-      } else {
-        meta["interleaveInfo"] = $.null();
       }
 
       meta["numberOfSamples"] = bank_info.num_samples;
@@ -115,34 +81,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     });
   }
 
-  auto get_all_meta(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
-
-    auto meta_arr = $.array<Napi::Object>(vgmstream->num_streams, [&](const size_t index) {
-      // NOLINTNEXTLINE bugprone-narrowing-conversions
-      return get_meta_impl(index + 1);
-    });
-
-    return meta_arr;
-  }
-
-  auto get_meta(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto arg0 = info[0];
-    if (!arg0.IsNumber()) {
-      return $.throws("arg[0] in getMeta is not a number");
-    }
-    auto index = arg0.As<Napi::Number>().Int32Value();
-
-    return get_meta_impl(index).As<Napi::Value>();
-  }
-
-  auto wave(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto arg0 = info[0];
-    if (!arg0.IsNumber()) {
-      return $.throws("arg[0] in getMeta is not a number");
-    }
-    auto stream_index = arg0.As<Napi::Number>().Int32Value();
-
+  auto render_to_wave(const Napi::CallbackInfo &info) -> Napi::Value {
     // fake configs
     const size_t sample_buffer_size = 8192;
     const int32_t seek_samples2 = -1;
@@ -155,7 +94,6 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     const int lwav_loop_end = 0;
     // end of fake configs
 
-    auto vgmstream_ptr = vgmstream_from_buffer(this->buffer_ref.Value(), stream_index);
     auto *vgmstream = vgmstream_ptr.get();
 
     auto channels = vgmstream->channels;
@@ -225,13 +163,79 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
     return buf.move_to_node_buffer($.env);
   }
 
+  static auto init(Napi::Env env) {
+    auto sub_song_class = DefineClass(
+        env,
+        "VGMStreamSubSong",
+        {
+            InstanceAccessor<&VGMStreamSubSong::get_info>("info"),
+            InstanceMethod<&VGMStreamSubSong::render_to_wave>("renderToWave"),
+        }
+    );
+    auto *constructor = new Napi::FunctionReference();
+    VGMStreamSubSong::constructor = new Napi::FunctionReference();
+    *VGMStreamSubSong::constructor = Napi::Persistent(sub_song_class);
+  }
+
+  static Napi::FunctionReference *constructor;
+};
+
+Napi::FunctionReference *VGMStreamSubSong::constructor = nullptr;
+
+class VGMStream : public Napi::ObjectWrap<VGMStream> {
+ private:
+  const Napi::CallbackInfo *info = nullptr;
+  Helper $;
+
+  Napi::Reference<NapiBuffer> buffer_ref;
+
+ public:
+  explicit VGMStream(const Napi::CallbackInfo &info) : Napi::ObjectWrap<VGMStream>(info), info(&info), $(info.Env()) {
+    auto buffer = obtain_arg<NapiBuffer>(info, 0);
+    buffer_ref = Napi::Reference<NapiBuffer>::New(buffer, 1);
+  }
+
+  static auto get_version(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto $ = Helper(info.Env());
+
+    return $.object([&](auto version) {
+      version["version"] = VGMSTREAM_VERSION;
+      version["extension"] = $.object([&](auto extension) {
+        size_t extension_list_len = 0;
+        const char **extension_list = nullptr;
+
+        extension_list = vgmstream_get_formats(&extension_list_len);
+        extension["vgm"] =
+            $.array<const char *>(extension_list_len, [&](const size_t index) { return extension_list[index]; });
+
+        extension_list = vgmstream_get_common_formats(&extension_list_len);
+        extension["common"] =
+            $.array<const char *>(extension_list_len, [&](const size_t index) { return extension_list[index]; });
+      });
+    });
+  }
+
+  auto get_sub_song_count(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
+
+    return $.number(vgmstream->num_streams);
+  }
+
+  auto select_sub_song(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto stream_index = info[0];
+
+    return VGMStreamSubSong::constructor->New({this->buffer_ref.Value(), stream_index});
+  }
+
   static auto init(Napi::Env env, Napi::Object exports) {
     auto vgmstream_class = DefineClass(
-        env, "VGMStream",
-        {InstanceMethod<&VGMStream::get_sub_song_count>("getSubSongCount"),
-         InstanceMethod<&VGMStream::get_all_meta>("getAllMeta"), InstanceMethod<&VGMStream::get_meta>("getMeta"),
-         InstanceMethod<&VGMStream::get_all_meta>("getAllMeta"), InstanceMethod<&VGMStream::wave>("wave"),
-         StaticAccessor<&VGMStream::get_version>("version")}
+        env,
+        "VGMStream",
+        {
+            StaticAccessor<&VGMStream::get_version>("version"),
+            InstanceAccessor<&VGMStream::get_sub_song_count>("subSongCount"),
+            InstanceMethod<&VGMStream::select_sub_song>("selectSubSong"),
+        }
     );
     auto *constructor = new Napi::FunctionReference();
     *constructor = Napi::Persistent(vgmstream_class);
@@ -241,6 +245,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
 
 static auto Init(Napi::Env env, Napi::Object exports) -> Napi::Object {
   VGMStream::init(env, exports);
+  VGMStreamSubSong::init(env);
   return exports;
 }
 

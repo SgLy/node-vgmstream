@@ -1,3 +1,1 @@
-const vgmstream = require('bindings')('node-vgmstream');
-
-module.exports = vgmstream
+module.exports = require('bindings')('node-vgmstream');

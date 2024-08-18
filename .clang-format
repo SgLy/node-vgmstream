@@ -13,10 +13,10 @@ AlignConsecutiveShortCaseStatements:
   Enabled: false
 AlignEscapedNewlines: DontAlign
 AlignOperands: AlignAfterOperator
-AllowAllArgumentsOnNextLine: true
+AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: true
-BinPackArguments: true
-BinPackParameters: true
+BinPackArguments: false
+BinPackParameters: false
 BreakAfterAttributes: Always
 BreakBeforeTernaryOperators: true
 Cpp11BracedListStyle: true

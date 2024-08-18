@@ -171,10 +171,29 @@ class Helper {
     return Napi::Number::From(this->env, number);
   }
 
+  template <typename T>
+  [[nodiscard]]
+  auto string(const T &string) const {
+    return Napi::String::From(this->env, string);
+  }
+
   [[nodiscard]]
   auto object(const std::function<void(Napi::Object &)> &initializer) const {
     auto obj = Napi::Object::New(this->env);
     initializer(obj);
+    return obj;
+  }
+
+  using NapiGetter = std::function<Napi::Value(const Napi::CallbackInfo &)>;
+
+  [[nodiscard]]
+  auto object(const std::function<void(Napi::Object &, const std::function<void(const char *, const NapiGetter &)> &)>
+                  &initializer) const {
+    auto obj = Napi::Object::New(this->env);
+    initializer(obj, [&](auto *name, auto getter) {
+      auto descriptor = Napi::PropertyDescriptor::Accessor(env, obj, name, getter);
+      obj.DefineProperty(descriptor);
+    });
     return obj;
   }
 
@@ -188,6 +207,28 @@ class Helper {
     return arr;
   }
 };
+
+template <typename T>
+auto obtain_arg(const Napi::CallbackInfo &info, const size_t index) -> T {
+  auto arg = info[index];
+  auto is_correct = false;
+  if (std::is_same_v<T, Napi::Number>) {
+    is_correct = arg.IsNumber();
+  } else if (std::is_same_v<T, NapiBuffer>) {
+    is_correct = arg.IsBuffer();
+  }
+  constexpr auto typestr = std::is_same_v<T, Napi::Number> ? "number"
+                         : std::is_same_v<T, NapiBuffer>   ? "buffer"
+                                                           : "unknown";
+  if (!is_correct) {
+    auto length = snprintf(nullptr, 0, "expect arg[%lu] to be a %s but mismatched", index, typestr);
+    auto *buf = new char[length + 1];
+    snprintf(buf, length + 1, "expect arg[%lu] to be a %s but not", index, typestr);
+    Napi::Error::New(info.Env(), buf).ThrowAsJavaScriptException();
+    delete[] buf;
+  }
+  return arg.As<T>();
+}
 
 auto new_inner_streamfile(int stream_index) -> STREAMFILE;
 
