@@ -19,8 +19,11 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
   const Napi::CallbackInfo *info = nullptr;
   Helper $;
 
+  using BufferRef = Napi::Reference<NapiBuffer>;
+
   int stream_index;
-  Napi::Reference<NapiBuffer> buffer_ref;
+  std::shared_ptr<BufferRef> buffer_ref;
+  std::string filename;
   std::shared_ptr<VGMSTREAM> vgmstream_ptr;
   vgmstream_info bank_info;
 
@@ -29,9 +32,10 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
       : Napi::ObjectWrap<VGMStreamSubSong>(info), info(&info), $(info.Env()) {
     auto buffer = obtain_arg<NapiBuffer>(info, 0);
     auto stream_index = obtain_arg<Napi::Number>(info, 1).Int32Value();
+    auto filename = obtain_arg<Napi::String>(info, 2).Utf8Value();
 
-    this->buffer_ref = Napi::Reference<NapiBuffer>::New(buffer, 1);
-    this->vgmstream_ptr = vgmstream_from_buffer(buffer, stream_index);
+    this->buffer_ref = std::make_shared<BufferRef>(std::move(BufferRef::New(buffer, 1)));
+    this->vgmstream_ptr = vgmstream_from_buffer(buffer, stream_index, filename);
     describe_vgmstream_info(vgmstream_ptr.get(), &bank_info);
   }
 
@@ -81,7 +85,7 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
     });
   }
 
-  auto render_to_wave(const Napi::CallbackInfo &info) -> Napi::Value {
+  static auto render_to_wave(const std::shared_ptr<VGMSTREAM> &vgmstream_ptr) {
     // fake configs
     const size_t sample_buffer_size = 8192;
     const int32_t seek_samples2 = -1;
@@ -100,7 +104,7 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
     auto input_channels = vgmstream->channels;
     vgmstream_mixing_enable(vgmstream, 0, &input_channels, &channels);
 
-    auto buf = ExtendableBuffer(sample_buffer_size * sizeof(sample_t) * input_channels);
+    auto *buf = new ExtendableBuffer(sample_buffer_size * sizeof(sample_t) * input_channels);
 
     /* simulate seek */
     auto len_samples = vgmstream_get_samples(vgmstream);
@@ -121,8 +125,8 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
 
     /* slap on a .wav header */
     if (!decode_only) {
-      buf.ensure<uint8_t>(buffer_size);
-      buf.expose<uint8_t>([&](auto *wav_buf) {
+      buf->ensure<uint8_t>(buffer_size);
+      buf->expose<uint8_t>([&](auto *wav_buf) {
         wav_header_t wav = {
             .sample_count = len_samples,
             .sample_rate = vgmstream->sample_rate,
@@ -141,14 +145,14 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
     /* decode */
 
     for (auto i = 0; i < len_samples; i += sample_buffer_size) {
-      auto to_get = sample_buffer_size;
+      int to_get = sample_buffer_size;
       if (i + sample_buffer_size > len_samples) {
         to_get = len_samples - i;
       }
 
       const auto length = channels * to_get;
-      buf.ensure<uint16_t>(length);
-      buf.expose<uint16_t>([&](auto *buffer) {
+      buf->ensure<uint16_t>(length);
+      buf->expose<uint16_t>([&](auto *buffer) {
         auto samples_done = render_vgmstream(reinterpret_cast<sample_t *>(buffer), to_get, vgmstream);
 
         if (!decode_only) {
@@ -156,11 +160,33 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
           return length;
         }
 
-        return 0LU;
+        return 0;
       });
     }
 
-    return buf.move_to_node_buffer($.env);
+    return buf;
+  }
+
+  auto render_sync(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto *buf = VGMStreamSubSong::render_to_wave(this->vgmstream_ptr);
+    auto result = buf->move_to_node_buffer($.env);
+    delete buf;
+    return result;
+  }
+
+  auto render_async(const Napi::CallbackInfo &info) -> Napi::Value {
+    auto promise = $.async<ExtendableBuffer>(
+        [vgmstream_ptr = vgmstream_ptr](auto resolve, auto reject) {
+          resolve(VGMStreamSubSong::render_to_wave(vgmstream_ptr));
+        },
+        [](auto env, auto value) { return value->move_to_node_buffer(env); }
+    );
+    this->buffer_ref->Ref();
+
+    auto finalizer = [buffer_ref = buffer_ref](Napi::Env env, void *data) { buffer_ref->Unref(); };
+    promise.AddFinalizer<decltype(finalizer), void>(finalizer, nullptr);
+
+    return promise;
   }
 
   static auto init(Napi::Env env) {
@@ -169,7 +195,8 @@ class VGMStreamSubSong : public Napi::ObjectWrap<VGMStreamSubSong> {
         "VGMStreamSubSong",
         {
             InstanceAccessor<&VGMStreamSubSong::get_info>("info"),
-            InstanceMethod<&VGMStreamSubSong::render_to_wave>("renderToWave"),
+            InstanceMethod<&VGMStreamSubSong::render_sync>("renderSync"),
+            InstanceMethod<&VGMStreamSubSong::render_async>("render"),
         }
     );
     auto *constructor = new Napi::FunctionReference();
@@ -188,11 +215,14 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
   Helper $;
 
   Napi::Reference<NapiBuffer> buffer_ref;
+  std::string filename;
 
  public:
   explicit VGMStream(const Napi::CallbackInfo &info) : Napi::ObjectWrap<VGMStream>(info), info(&info), $(info.Env()) {
     auto buffer = obtain_arg<NapiBuffer>(info, 0);
-    buffer_ref = Napi::Reference<NapiBuffer>::New(buffer, 1);
+    auto filename = obtain_arg<Napi::String>(info, 1, $.string("default.bank"));
+    this->filename = filename.Utf8Value();
+    this->buffer_ref = Napi::Reference<NapiBuffer>::New(buffer, 1);
   }
 
   static auto get_version(const Napi::CallbackInfo &info) -> Napi::Value {
@@ -216,7 +246,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
   }
 
   auto get_sub_song_count(const Napi::CallbackInfo &info) -> Napi::Value {
-    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value());
+    auto vgmstream = vgmstream_from_buffer(this->buffer_ref.Value(), 1, this->filename);
 
     return $.number(vgmstream->num_streams);
   }
@@ -224,7 +254,7 @@ class VGMStream : public Napi::ObjectWrap<VGMStream> {
   auto select_sub_song(const Napi::CallbackInfo &info) -> Napi::Value {
     auto stream_index = info[0];
 
-    return VGMStreamSubSong::constructor->New({this->buffer_ref.Value(), stream_index});
+    return VGMStreamSubSong::constructor->New({this->buffer_ref.Value(), stream_index, $.string(filename)});
   }
 
   static auto init(Napi::Env env, Napi::Object exports) {

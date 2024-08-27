@@ -4,10 +4,13 @@
   "types": "lib.d.ts",
   "main": "lib.js",
   "scripts": {
-    "install": "cmake-js compile --generator=Ninja --prefer-clang --out build",
-    "configure:debug": "cmake-js configure --generator=Ninja --prefer-clang --out build --debug",
-    "reconfigure:debug": "cmake-js reconfigure --generator=Ninja --prefer-clang --out build --debug",
-    "build:debug": "cmake-js build --debug",
+    "install": "npm run configure && npm run build",
+    "configure": "cmake-js configure",
+    "reconfigure": "cmake-js reconfigure",
+    "build": "cmake-js build",
+    "configure:debug": "npm run configure -- --debug",
+    "reconfigure:debug": "npm run reconfigure -- --debug",
+    "build:debug": "npm run build -- --debug",
     "test": "node test.js"
   },
   "keywords": [],

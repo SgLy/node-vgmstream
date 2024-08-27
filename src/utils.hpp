@@ -11,8 +11,12 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 extern "C" {
 #include "vgmstream/src/streamfile.h"
@@ -21,25 +25,11 @@ extern "C" {
 
 #if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #define SWAP_REQUIRED true
-#include <utility>
 #else
 #define SWAP_REQUIRED false
 #endif
 
 using NapiBuffer = Napi::Buffer<uint8_t>;
-
-template <typename T>
-constexpr auto unsigned_multiplier() {
-  // NOLINTBEGIN readability-magic-numbers
-  constexpr auto multiplier = std::is_same_v<T, uint8_t>  ? 1
-                            : std::is_same_v<T, uint16_t> ? 2
-                            : std::is_same_v<T, uint32_t> ? 4
-                            : std::is_same_v<T, uint32_t> ? 8
-                                                          : 0;  // never
-  // NOLINTEND readability-magic-numbers
-  static_assert(multiplier != 0, "T must inherit from one of uint8_t, uint16_t, uint32_t, uint64_t");
-  return multiplier;
-}
 
 class ExtendableBuffer {
  public:
@@ -62,9 +52,8 @@ class ExtendableBuffer {
     if (!initialized) {
       return;
     }
-    constexpr auto multiplier = unsigned_multiplier<T>();
-    if (current + length * multiplier > capacity) {
-      resize(std::max(capacity * 2, current + length * multiplier));
+    if (current + length * sizeof(T) > capacity) {
+      resize(std::max(capacity * 2, current + length * sizeof(T)));
     }
   }
 
@@ -73,11 +62,10 @@ class ExtendableBuffer {
     if (!initialized) {
       return;
     }
-    auto multiplier = unsigned_multiplier<T>();
-    ensure<T>(length * multiplier);
-    memcpy(ptr + current, buffer, length * multiplier);
+    ensure<T>(length * sizeof(T));
+    memcpy(ptr + current, buffer, length * sizeof(T));
     swap<T>(length);
-    current += length * multiplier;
+    current += length * sizeof(T);
   }
 
   template <typename T>
@@ -86,9 +74,8 @@ class ExtendableBuffer {
       return;
     }
     auto written = callback(reinterpret_cast<T *>(ptr + current));
-    auto multiplier = unsigned_multiplier<T>();
     swap<T>(written);
-    current += written * multiplier;
+    current += written * sizeof(T);
   }
 
   void resize(const size_t new_size) {
@@ -122,27 +109,87 @@ class ExtendableBuffer {
   template <typename T>
   void swap(const size_t count) {
 #if SWAP_REQUIRED
-    auto multiplier = unsigned_multiplier<T>();
-    if (multiplier == 1) {
+    if (sizeof(T) == 1) {
       return;
     }
-    // NOLINTBEGIN readability-magic-numbers
-    for (auto *i = ptr + current; i < ptr + current + count * multiplier; i += multiplier) {
-      if (std::is_same_v<T, uint16_t>) {
-        std::swap(*i, *(i + 1));
-      } else if (std::is_same_v<T, uint32_t>) {
-        std::swap(*i, *(i + 3));
-        std::swap(*(i + 1), *(i + 2));
-      } else if (std::is_same_v<T, uint64_t>) {
-        std::swap(*i, *(i + 7));
-        std::swap(*(i + 1), *(i + 6));
-        std::swap(*(i + 2), *(i + 5));
-        std::swap(*(i + 3), *(i + 4));  // NOLINT build/include_what_you_use
+    for (auto *i = ptr + current; i < ptr + current + count * sizeof(T); i += sizeof(T)) {
+      for (auto *left_ptr = i, *right_ptr = i + sizeof(T) - 1; left_ptr < right_ptr; ++left_ptr, --right_ptr) {
+        std::swap(*left_ptr, *right_ptr);
       }
     }
-// NOLINTEND readability-magic-numbers
 #endif
   }
+};
+
+template <typename T>
+class Promise {
+ public:
+  using ResolveFunc = std::function<void(T *)>;
+  using RejectFunc = std::function<void(const char *)>;
+  using PromiseFunc = std::function<void(ResolveFunc, RejectFunc)>;
+  using TransformFunc = std::function<Napi::Value(Napi::Env env, T *value)>;
+
+ private:
+  using Data = std::tuple<bool, T *, const char *>;
+  using FinalizerDataType = void;
+
+  static void call_js(Napi::Env env, Napi::Function callback, Promise *context, Data *data) {
+    auto [is_success, value, error_message] = *data;
+    context->thread.join();
+    if (is_success) {
+      context->deferred.Resolve(context->transform(env, value));
+    } else {
+      context->deferred.Reject(Napi::String::From(env, error_message));
+    }
+    delete value;
+    delete data;
+  }
+
+  using ThreadSafeFunction = Napi::TypedThreadSafeFunction<Promise, Data, Promise::call_js>;
+
+ public:
+  explicit Promise(Napi::Env env, PromiseFunc &&process, TransformFunc &&transform)
+      : deferred(Napi::Promise::Deferred::New(env)), transform(std::move(transform)) {
+    this->func =
+        ThreadSafeFunction::New(env, "Resource Name", 0, 1, this, [](Napi::Env, FinalizerDataType *, Promise *context) {
+          delete context;
+        });
+    this->thread = std::thread([process = std::move(process), this] {
+      bool resolved = false;
+      bool rejected = false;
+      T *resolved_value = nullptr;
+      const char *error_message = nullptr;
+      process(
+          [&](auto value) {
+            resolved = true;
+            resolved_value = value;
+          },
+          [&](auto message) {
+            rejected = true;
+            error_message = message;
+          }
+      );
+      if (resolved) {
+        this->func.BlockingCall(new Data(true, resolved_value, nullptr));
+      } else if (rejected) {
+        this->func.BlockingCall(new Data(false, nullptr, error_message));
+      } else {
+        throw std::logic_error("Native error: Promise should either resolved or rejected.");
+      }
+      this->func.Release();
+    });
+  }
+
+  [[nodiscard]]
+  auto promise() const -> Napi::Promise {
+    return this->deferred.Promise();
+  }
+
+ private:
+  Napi::Promise::Deferred deferred;
+  std::thread thread;
+  ThreadSafeFunction func;
+  TransformFunc transform;
 };
 
 class Helper {
@@ -206,6 +253,13 @@ class Helper {
     }
     return arr;
   }
+
+  template <typename T>
+  [[nodiscard]]
+  auto async(typename Promise<T>::PromiseFunc &&process, typename Promise<T>::TransformFunc &&transform) const {
+    auto promise = new Promise<T>(this->env, std::move(process), std::move(transform));
+    return promise->promise();
+  }
 };
 
 template <typename T>
@@ -214,10 +268,13 @@ auto obtain_arg(const Napi::CallbackInfo &info, const size_t index) -> T {
   auto is_correct = false;
   if (std::is_same_v<T, Napi::Number>) {
     is_correct = arg.IsNumber();
+  } else if (std::is_same_v<T, Napi::String>) {
+    is_correct = arg.IsString();
   } else if (std::is_same_v<T, NapiBuffer>) {
     is_correct = arg.IsBuffer();
   }
   constexpr auto typestr = std::is_same_v<T, Napi::Number> ? "number"
+                         : std::is_same_v<T, Napi::String> ? "string"
                          : std::is_same_v<T, NapiBuffer>   ? "buffer"
                                                            : "unknown";
   if (!is_correct) {
@@ -230,29 +287,39 @@ auto obtain_arg(const Napi::CallbackInfo &info, const size_t index) -> T {
   return arg.As<T>();
 }
 
+template <typename T>
+auto obtain_arg(const Napi::CallbackInfo &info, const size_t index, const T &default_value) -> T {
+  return index < info.Length() ? obtain_arg<T>(info, index) : default_value;
+}
+
 auto new_inner_streamfile(int stream_index) -> STREAMFILE;
 
 class NodeBufferStreamFile {
  public:
-  explicit NodeBufferStreamFile(const NapiBuffer &buffer, const int stream_index)
-      : buffer(buffer), vt(new_inner_streamfile(stream_index)) {}
+  explicit NodeBufferStreamFile(const NapiBuffer &buffer, const int stream_index, std::string filename)
+      : buffer(buffer.Data()),
+        length(buffer.Length()),
+        vt(new_inner_streamfile(stream_index)),
+        filename(std::move(filename)) {}
+  ~NodeBufferStreamFile() {}
 
   STREAMFILE vt;
-  std::string filename = "whatever.bank";
-  NapiBuffer buffer;
+  std::string filename;
+  uint8_t const *buffer;
+  size_t length;
   offv_t offset;
 };
 
 /* get max offset */
 auto read(NodeBufferStreamFile *stream_file, uint8_t *dst, offv_t offset, size_t length) -> size_t {
-  memcpy(dst, stream_file->buffer.Data() + offset, length);
+  memcpy(dst, stream_file->buffer + offset, std::min(length, stream_file->length - offset));
   // NOLINTNEXTLINE bugprone-narrowing-conversions
   stream_file->offset = offset + length;
   return length;
 }
 
 /* get max offset */
-auto get_size(NodeBufferStreamFile *stream_file) -> size_t { return stream_file->buffer.Length(); }
+auto get_size(NodeBufferStreamFile *stream_file) -> size_t { return stream_file->length; }
 
 // todo: DO NOT USE, NOT RESET PROPERLY (remove?)
 auto get_offset(NodeBufferStreamFile *stream_file) -> offv_t { return stream_file->offset; }
@@ -288,8 +355,8 @@ auto new_inner_streamfile(const int stream_index) -> STREAMFILE {
   };
 }
 
-auto vgmstream_from_buffer(const NapiBuffer &buffer, const int stream_index = 1) {
-  auto *buffer_stream_file = new NodeBufferStreamFile(buffer, stream_index);
+auto vgmstream_from_buffer(const NapiBuffer &buffer, const int stream_index, const std::string &filename) {
+  auto *buffer_stream_file = new NodeBufferStreamFile(buffer, stream_index, filename);
   auto *vgmstream = init_vgmstream_from_STREAMFILE(reinterpret_cast<STREAMFILE *>(buffer_stream_file));
   return std::shared_ptr<VGMSTREAM>(vgmstream, [=](auto ptr) {
     close_vgmstream(ptr);

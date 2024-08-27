@@ -51,7 +51,7 @@ CheckOptions:
   readability-identifier-naming.ScopedEnumConstantCase: CamelCase
   readability-identifier-naming.StaticConstantCase: CamelCase
   readability-identifier-naming.StaticVariableCase: CamelCase
-  readability-identifier-naming.StructCase: lower_case
+  readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.TemplateParameterCase: CamelCase
   readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
   readability-identifier-naming.TypeAliasCase: CamelCase

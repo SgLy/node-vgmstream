@@ -9,7 +9,7 @@ declare module 'node-vgmstream' {
   class VGMStream {
     static get version(): VGMStreamVersion;
 
-    constructor(buffer: Buffer);
+    constructor(buffer: Buffer, filename?: string);
 
     get subSongCount(): number;
     /** 1-based */
@@ -46,7 +46,8 @@ declare module 'node-vgmstream' {
   }
   class VGMStreamSubSong {
     get info(): VGMStreamSubSongInfo;
-    renderToWave(): Buffer;
+    render(): Promise<Buffer>;
+    renderSync(): Buffer;
   }
   export { VGMStream };
 }
